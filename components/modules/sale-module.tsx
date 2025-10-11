@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -12,7 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
-import { Search, Plus, Minus, Trash2, ShoppingCart, Scan, Filter, Calendar, Package, DollarSign } from 'lucide-react';
+import { Search, Plus, Minus, Trash2, ShoppingCart, Filter, Calendar, Package, DollarSign } from 'lucide-react';
 import { toast } from '@/components/ui/use-toast';
 import { jwtDecode } from 'jwt-decode';
 
@@ -24,8 +23,8 @@ interface Medication {
   dosageForm: string;
   alertLevel: number;
   price: string;
-  stockQuantity: number; // This will be the currentQuantity from stock table
-  reservedQuantity?: number; // Optional reserved quantity
+  stockQuantity: number;
+  reservedQuantity?: number;
   family: string | null;
   unit: string | null;
   familyId: number | null;
@@ -65,8 +64,6 @@ export default function SaleModule() {
   const [loading, setLoading] = useState(false);
   const [saleLoading, setSaleLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [customer, setCustomer] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState<string | null>(null);
   const [dateFilter, setDateFilter] = useState({ startDate: '', endDate: '' });
   const [selectedCashier, setSelectedCashier] = useState('all');
 
@@ -74,13 +71,30 @@ export default function SaleModule() {
     const fetchData = async () => {
       setLoading(true);
       try {
-        const [medicationsRes, familiesRes, unitsRes, usersRes] = await Promise.all([
-          axiosInstance.get('api/medications'),
+        const [stockRes, familiesRes, unitsRes, usersRes] = await Promise.all([
+          axiosInstance.get('api/stock'),
           axiosInstance.get('api/families'),
           axiosInstance.get('api/units'),
           axiosInstance.get('api/users'),
         ]);
-        setMedications(medicationsRes.data);
+        
+        const medicationsWithStock = stockRes.data.map((stockItem: any) => ({
+          id: stockItem.medication.id,
+          code: stockItem.medication.code,
+          name: stockItem.medication.name,
+          description: null,
+          dosageForm: '',
+          alertLevel: stockItem.medication.alertLevel,
+          price: stockItem.medication.price,
+          stockQuantity: stockItem.currentQuantity,
+          reservedQuantity: stockItem.reservedQuantity,
+          family: stockItem.medication.family,
+          unit: stockItem.medication.unit,
+          familyId: null,
+          unitId: null,
+        }));
+        
+        setMedications(medicationsWithStock);
         setFamilies(familiesRes.data);
         setUnits(unitsRes.data);
         setUsers(usersRes.data);
@@ -173,33 +187,13 @@ export default function SaleModule() {
   };
 
   const completeSale = async () => {
-    console.log("clicked 1")
     if (cart.length === 0) {
       toast({ title: 'Error', description: 'Cart is empty', variant: 'destructive' });
       return;
     }
-    if (!paymentMethod) {
-      toast({ title: 'Error', description: 'Please select a payment method', variant: 'destructive' });
-      return;
-    }
     setSaleLoading(true);
     try {
-    console.log("clicked 2")
-      
-      // Get authenticated user ID from JWT
-      // const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-      // if (!token) {
-      //   toast({ title: 'Error', description: 'User not authenticated', variant: 'destructive' });
-      //   return;
-      // }
-      // const decoded: JwtPayload = jwtDecode(token);
-      // const userId = decoded.userId;
-      // if (!userId) {
-      //   throw new Error('User ID not found in token');
-      // }
-    console.log("clicked 3")
-
-      // Validate stock client-side (optional, since server validates too)
+      // Validate stock client-side
       for (const item of cart) {
         const medication = medications.find((med) => med.id === item.medication.id);
         if (!medication || item.quantity > medication.stockQuantity) {
@@ -209,7 +203,7 @@ export default function SaleModule() {
 
       // Send POST request to /api/sales
       const response = await axiosInstance.post('api/sales', {
-        userId: 1,
+        userId: 1, // Temporary static userId; replace with dynamic userId from auth
         items: cart.map(item => ({
           medicationId: Number(item.medication.id),
           quantity: Number(item.quantity),
@@ -221,16 +215,31 @@ export default function SaleModule() {
 
       // Clear cart and reset form
       setCart([]);
-      setCustomer('');
-      setPaymentMethod(null);
       toast({ title: 'Success', description: `Sale ${response.data.id} completed with ${cart.length} items` });
 
-      // Refresh medications and sales data
-      const [medicationsRes, salesRes] = await Promise.all([
-        axiosInstance.get('api/medications'),
+      // Refresh stock and sales data
+      const [stockRes, salesRes] = await Promise.all([
+        axiosInstance.get('api/stock'),
         axiosInstance.get('api/sales'),
       ]);
-      setMedications(medicationsRes.data);
+      
+      const medicationsWithStock = stockRes.data.map((stockItem: any) => ({
+        id: stockItem.medication.id,
+        code: stockItem.medication.code,
+        name: stockItem.medication.name,
+        description: null,
+        dosageForm: '',
+        alertLevel: stockItem.medication.alertLevel,
+        price: stockItem.medication.price,
+        stockQuantity: stockItem.currentQuantity,
+        reservedQuantity: stockItem.reservedQuantity,
+        family: stockItem.medication.family,
+        unit: stockItem.medication.unit,
+        familyId: null,
+        unitId: null,
+      }));
+      
+      setMedications(medicationsWithStock);
       setSales(salesRes.data);
     } catch (err: any) {
       toast({
@@ -244,7 +253,7 @@ export default function SaleModule() {
   };
 
   const subtotal = cart.reduce((sum, item) => sum + Number(item.medication.price) * item.quantity, 0);
-  const tax = subtotal * 0.1;
+  const tax = subtotal * 0;
   const discount = 0;
   const total = subtotal + tax - discount;
 
@@ -288,10 +297,6 @@ export default function SaleModule() {
                       className="pl-10"
                     />
                   </div>
-                  <Button variant="outline" size="sm" className="gap-2 bg-transparent">
-                    <Scan className="h-4 w-4" />
-                    Scan Barcode
-                  </Button>
                 </CardHeader>
                 <CardContent className="overflow-auto">
                   {loading && <div>Loading...</div>}
@@ -311,7 +316,7 @@ export default function SaleModule() {
                               <p className="text-xs text-muted-foreground">{medication.description}</p>
                             </div>
                             <div className="text-right">
-                              <p className="font-bold text-primary">${Number(medication.price).toFixed(2)}</p>
+                              <p className="font-bold text-primary">{Number(medication.price).toFixed(2)} FBu</p>
                               <Badge variant={medication.stockQuantity < 20 ? 'destructive' : 'secondary'} className="text-xs">
                                 {medication.stockQuantity} in stock
                               </Badge>
@@ -344,7 +349,7 @@ export default function SaleModule() {
                         <div key={item.medication.id} className="flex items-center gap-3 p-3 border rounded-lg">
                           <div className="flex-1">
                             <p className="font-medium text-sm">{item.medication.name}</p>
-                            <p className="text-xs text-muted-foreground">${Number(item.medication.price).toFixed(2)} each</p>
+                            <p className="text-xs text-muted-foreground">{Number(item.medication.price).toFixed(2)} FBu each</p>
                           </div>
                           <div className="flex items-center gap-2">
                             <Button
@@ -364,7 +369,7 @@ export default function SaleModule() {
                             </Button>
                           </div>
                           <div className="text-right">
-                            <p className="font-bold">${(Number(item.medication.price) * item.quantity).toFixed(2)}</p>
+                            <p className="font-bold">{(Number(item.medication.price) * item.quantity).toFixed(2)} FBu</p>
                             <Button
                               variant="ghost"
                               size="sm"
@@ -391,51 +396,27 @@ export default function SaleModule() {
                   <div className="space-y-3">
                     <div className="flex justify-between">
                       <span>Subtotal:</span>
-                      <span>${subtotal.toFixed(2)}</span>
+                      <span>{subtotal.toFixed(0)} FBu</span>
                     </div>
                     <div className="flex justify-between">
-                      <span>Tax (10%):</span>
-                      <span>${tax.toFixed(2)}</span>
+                      <span>Tax (0%):</span>
+                      <span>{tax.toFixed(2)} FBu</span>
                     </div>
                     <div className="flex justify-between">
                       <span>Discount:</span>
-                      <span>-${discount.toFixed(2)}</span>
+                      <span>-{discount.toFixed(0)} FBu</span>
                     </div>
                     <Separator />
                     <div className="flex justify-between text-lg font-bold">
                       <span>Total:</span>
-                      <span className="text-primary">${total.toFixed(2)}</span>
+                      <span className="text-primary">{total.toFixed(0)} FBu</span>
                     </div>
-                  </div>
-
-                  <div className="space-y-3">
-                    <Label htmlFor="customer">Customer (Optional)</Label>
-                    <Input
-                      id="customer"
-                      placeholder="Enter customer name"
-                      value={customer}
-                      onChange={(e) => setCustomer(e.target.value)}
-                    />
-                  </div>
-
-                  <div className="space-y-3">
-                    <Label htmlFor="payment">Payment Method</Label>
-                    <Select value={paymentMethod || ''} onValueChange={setPaymentMethod}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select payment method" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="cash">Cash</SelectItem>
-                        <SelectItem value="card">Credit/Debit Card</SelectItem>
-                        <SelectItem value="insurance">Insurance</SelectItem>
-                      </SelectContent>
-                    </Select>
                   </div>
 
                   <Button
                     className="w-full"
                     size="lg"
-                    disabled={cart.length === 0 || !paymentMethod || saleLoading}
+                    disabled={cart.length === 0 || saleLoading}
                     onClick={completeSale}
                   >
                     {saleLoading ? 'Processing...' : 'Complete Sale'}
@@ -510,7 +491,7 @@ export default function SaleModule() {
                         <TableCell className="font-medium">{medication.name}</TableCell>
                         <TableCell>{medication.family}</TableCell>
                         <TableCell>{medication.unit}</TableCell>
-                        <TableCell>${Number(medication.price).toFixed(2)}</TableCell>
+                        <TableCell>{Number(medication.price).toFixed(2)} FBu</TableCell>
                         <TableCell>{medication.stockQuantity}</TableCell>
                         <TableCell>
                           <Badge
@@ -594,7 +575,7 @@ export default function SaleModule() {
                         <TableCell className="font-mono">{sale.id}</TableCell>
                         <TableCell>{new Date(sale.saleDate).toLocaleDateString()}</TableCell>
                         <TableCell>{sale.username}</TableCell>
-                        <TableCell className="font-bold">${Number(sale.totalAmount).toFixed(2)}</TableCell>
+                        <TableCell className="font-bold">{Number(sale.totalAmount).toFixed(2)} FBu</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -607,4 +588,3 @@ export default function SaleModule() {
     </div>
   );
 }
-

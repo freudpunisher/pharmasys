@@ -36,6 +36,11 @@ export async function GET(request: NextRequest) {
       query = query.where(lt(stock.currentQuantity, medications.alertLevel))
     }
 
+    // Ensure that the table 'stock' exists in the database and migrations have been run.
+    // If the error "relation \"stock\" does not exist" persists, 
+    // please verify your database schema definition in `app/lib/db/schema.ts`
+    // and ensure that your database migrations have been applied correctly.
+
     const result = await query
     return NextResponse.json(result)
   } catch (error) {
