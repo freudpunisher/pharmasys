@@ -9,7 +9,6 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { Search, Plus, Minus, Trash2, ShoppingCart, Filter, Calendar, Package, DollarSign } from 'lucide-react';
 import { toast } from '@/components/ui/use-toast';
@@ -66,6 +65,7 @@ export default function SaleModule() {
   const [error, setError] = useState<string | null>(null);
   const [dateFilter, setDateFilter] = useState({ startDate: '', endDate: '' });
   const [selectedCashier, setSelectedCashier] = useState('all');
+  const [billContent, setBillContent] = useState<string>('');
 
   useEffect(() => {
     const fetchData = async () => {
@@ -186,6 +186,84 @@ export default function SaleModule() {
     setCart(cart.filter((item) => item.medication.id !== medicationId));
   };
 
+  const generateBill = (saleId: number, cartItems: CartItem[], subtotal: number, tax: number, discount: number, total: number) => {
+    const now = '04:36 PM CAT, Saturday, October 11, 2025'; // Current date and time
+    const cashier = users.find(u => u.id === 1)?.username || 'Unknown'; // Replace with dynamic userId
+    const maxLineWidth = 32; // Standard for 80mm thermal printers
+
+    const padCenter = (text: string, width: number) => {
+      const padding = Math.max(0, Math.floor((width - text.length) / 2));
+      return ' '.repeat(padding) + text + ' '.repeat(width - text.length - padding);
+    };
+
+    const padRight = (text: string, width: number) => {
+      return text + ' '.repeat(Math.max(0, width - text.length));
+    };
+
+    let bill = '';
+    bill += padCenter('PHARMACY NAME', maxLineWidth) + '\n';
+    bill += padCenter('123 Pharmacy St, City', maxLineWidth) + '\n';
+    bill += padCenter('Phone: (123) 456-7890', maxLineWidth) + '\n';
+    bill += '-'.repeat(maxLineWidth) + '\n';
+    bill += `Sale ID: ${saleId}\n`;
+    bill += `Date: ${now}\n`;
+    bill += `Cashier: ${cashier}\n`;
+    bill += '-'.repeat(maxLineWidth) + '\n';
+    bill += padRight('Item', 16) + padRight('Qty', 6) + padRight('Price', 10) + '\n';
+    bill += '-'.repeat(maxLineWidth) + '\n';
+
+    cartItems.forEach(item => {
+      const itemName = item.medication.name.slice(0, 14); // Truncate for space
+      const qty = item.quantity.toString();
+      const price = (Number(item.medication.price) * item.quantity).toFixed(2);
+      bill += padRight(itemName, 16) + padRight(qty, 6) + padRight(price, 10) + '\n';
+    });
+
+    bill += '-'.repeat(maxLineWidth) + '\n';
+    bill += padRight('Subtotal:', 22) + subtotal.toFixed(2) + ' FBu\n';
+    bill += padRight('Tax (10%):', 22) + tax.toFixed(2) + ' FBu\n';
+    bill += padRight('Discount:', 22) + discount.toFixed(2) + ' FBu\n';
+    bill += '-'.repeat(maxLineWidth) + '\n';
+    bill += padRight('Total:', 22) + total.toFixed(2) + ' FBu\n';
+    bill += '-'.repeat(maxLineWidth) + '\n';
+    bill += padCenter('Thank you for your purchase!', maxLineWidth) + '\n\n\n'; // Extra newlines for paper feed
+
+    console.log('Generated Bill:', bill); // Debug bill content
+    return bill;
+  };
+
+  const printBill = (bill: string) => {
+    try {
+      setBillContent(bill);
+      const printWindow = window.open('', '', 'width=700,height=700');
+      if (printWindow) {
+        printWindow.document.write(`
+          <html>
+            <head>
+              <title>Print Bill</title>
+              <style>
+                body { margin: 0; padding: 10mm; font-family: monospace; font-size: 10pt; line-height: 1.2; }
+                .bill-content { width: 80mm; white-space: pre-wrap; }
+              </style>
+            </head>
+            <body>
+              <div class="bill-content">${bill}</div>
+            </body>
+          </html>
+        `);
+        printWindow.document.close();
+        printWindow.focus();
+        printWindow.print();
+        printWindow.close();
+      } else {
+        throw new Error('Failed to open print window');
+      }
+    } catch (err) {
+      console.error('Print Error:', err);
+      toast({ title: 'Print Error', description: 'Failed to print bill', variant: 'destructive' });
+    }
+  };
+
   const completeSale = async () => {
     if (cart.length === 0) {
       toast({ title: 'Error', description: 'Cart is empty', variant: 'destructive' });
@@ -203,7 +281,7 @@ export default function SaleModule() {
 
       // Send POST request to /api/sales
       const response = await axiosInstance.post('api/sales', {
-        userId: 1, // Temporary static userId; replace with dynamic userId from auth
+        userId: 1, // Replace with dynamic userId from auth
         items: cart.map(item => ({
           medicationId: Number(item.medication.id),
           quantity: Number(item.quantity),
@@ -213,9 +291,20 @@ export default function SaleModule() {
         discountAmount: Number(discount.toFixed(2)),
       });
 
+      // Generate and print bill
+      const bill = generateBill(
+        response.data.id,
+        cart,
+        subtotal,
+        tax,
+        discount,
+        total
+      );
+      printBill(bill);
+
       // Clear cart and reset form
       setCart([]);
-      toast({ title: 'Success', description: `Sale ${response.data.id} completed with ${cart.length} items` });
+      toast({ title: 'Success', description: `Sale ${response.data.id} completed and bill printed` });
 
       // Refresh stock and sales data
       const [stockRes, salesRes] = await Promise.all([
@@ -242,6 +331,7 @@ export default function SaleModule() {
       setMedications(medicationsWithStock);
       setSales(salesRes.data);
     } catch (err: any) {
+      console.error('Sale Error:', err);
       toast({
         title: 'Error',
         description: err.message || err.response?.data?.error || 'Failed to complete sale',
@@ -253,7 +343,7 @@ export default function SaleModule() {
   };
 
   const subtotal = cart.reduce((sum, item) => sum + Number(item.medication.price) * item.quantity, 0);
-  const tax = subtotal * 0;
+  const tax = subtotal * 0.1;
   const discount = 0;
   const total = subtotal + tax - discount;
 
@@ -396,20 +486,20 @@ export default function SaleModule() {
                   <div className="space-y-3">
                     <div className="flex justify-between">
                       <span>Subtotal:</span>
-                      <span>{subtotal.toFixed(0)} FBu</span>
+                      <span>{subtotal.toFixed(2)} FBu</span>
                     </div>
                     <div className="flex justify-between">
-                      <span>Tax (0%):</span>
+                      <span>Tax (10%):</span>
                       <span>{tax.toFixed(2)} FBu</span>
                     </div>
                     <div className="flex justify-between">
                       <span>Discount:</span>
-                      <span>-{discount.toFixed(0)} FBu</span>
+                      <span>-{discount.toFixed(2)} FBu</span>
                     </div>
                     <Separator />
                     <div className="flex justify-between text-lg font-bold">
                       <span>Total:</span>
-                      <span className="text-primary">{total.toFixed(0)} FBu</span>
+                      <span className="text-primary">{total.toFixed(2)} FBu</span>
                     </div>
                   </div>
 
@@ -422,9 +512,30 @@ export default function SaleModule() {
                     {saleLoading ? 'Processing...' : 'Complete Sale'}
                   </Button>
 
-                  <Button variant="outline" className="w-full bg-transparent" onClick={() => setCart([])}>
+                  <Button
+                    variant="outline"
+                    className="w-full bg-transparent mt-2"
+                    onClick={() => setCart([])}
+                  >
                     Clear Cart
                   </Button>
+
+                  {/* Fallback Print Button for Debugging */}
+                  {billContent && (
+                    <Button
+                      className="w-full mt-2"
+                      onClick={() => printBill(billContent)}
+                    >
+                      Print Bill Manually
+                    </Button>
+                  )}
+
+                  {/* Bill Preview for Debugging */}
+                  {billContent && (
+                    <pre className="border p-4 mt-4 font-mono text-sm bg-gray-100">
+                      {billContent}
+                    </pre>
+                  )}
                 </CardContent>
               </Card>
             </div>
