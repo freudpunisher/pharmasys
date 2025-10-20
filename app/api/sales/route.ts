@@ -1,4 +1,3 @@
-// app/api/sales/route.ts
 import { type NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { sales, saleItems, medications, users, stock } from "@/lib/db/schema";
@@ -11,6 +10,7 @@ export async function GET(request: NextRequest) {
     const endDate = searchParams.get("endDate");
     const userId = searchParams.get("userId");
 
+    // Fetch sales with related data
     const query = db
       .select({
         id: sales.id,
@@ -19,16 +19,49 @@ export async function GET(request: NextRequest) {
         discountAmount: sales.discountAmount,
         saleDate: sales.saleDate,
         username: users.username,
+        item: {
+          medicationId: saleItems.medicationId,
+          name: medications.name,
+          quantity: saleItems.quantity,
+          unitPrice: saleItems.unitPrice,
+        },
       })
       .from(sales)
-      .leftJoin(users, eq(sales.userId, users.id));
+      .leftJoin(users, eq(sales.userId, users.id))
+      .leftJoin(saleItems, eq(sales.id, saleItems.saleId))
+      .leftJoin(medications, eq(saleItems.medicationId, medications.id));
 
     const conditions = [];
     if (startDate) conditions.push(gte(sales.saleDate, new Date(startDate)));
     if (endDate) conditions.push(lte(sales.saleDate, new Date(endDate)));
     if (userId) conditions.push(eq(sales.userId, Number.parseInt(userId)));
 
-    const result = await (conditions.length > 0 ? query.where(and(...conditions)) : query);
+    const rawResults = await (conditions.length > 0 ? query.where(and(...conditions)) : query);
+
+    // Group results by sale
+    const salesMap = new Map();
+    for (const row of rawResults) {
+      const saleId = row.id;
+      if (!salesMap.has(saleId)) {
+        salesMap.set(saleId, {
+          id: row.id,
+          totalAmount: row.totalAmount,
+          taxAmount: row.taxAmount,
+          discountAmount: row.discountAmount,
+          saleDate: row.saleDate,
+          username: row.username,
+          items: [],
+        });
+      }
+      // Only add item if it exists (non-null)
+      if (row.item.medicationId) {
+        salesMap.get(saleId).items.push(row.item);
+      }
+    }
+
+    // Convert map to array
+    const result = Array.from(salesMap.values());
+
     return NextResponse.json(result);
   } catch (error: any) {
     console.error("GET /api/sales error:", {

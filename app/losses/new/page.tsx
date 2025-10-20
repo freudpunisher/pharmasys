@@ -1,59 +1,67 @@
-"use client";
+'use client';
 
-import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
-import axiosInstance from "@/lib/axiosInstance";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { toast } from "@/components/ui/use-toast";
-import { TrendingDown } from "lucide-react";
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import axiosInstance from '@/lib/axiosInstance';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { toast } from '@/components/ui/use-toast';
+import { TrendingDown } from 'lucide-react';
 
 interface Medication {
   id: number;
   code: string;
   name: string;
   price: string;
-  stockQuantity: number;
+  currentQuantity: number;
 }
 
 export default function NewLoss() {
   const router = useRouter();
   const [medications, setMedications] = useState<Medication[]>([]);
-  const [selectedMedication, setSelectedMedication] = useState("");
-  const [quantity, setQuantity] = useState("");
-  const [reason, setReason] = useState("");
-  const [description, setDescription] = useState("");
-  const [lossDate, setLossDate] = useState("");
+  const [selectedMedication, setSelectedMedication] = useState('');
+  const [quantity, setQuantity] = useState('');
+  const [reason, setReason] = useState('');
+  const [description, setDescription] = useState('');
+  const [lossDate, setLossDate] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const userId = 1; // Replace with actual user ID from JWT or auth context
 
-  const lossReasons = ["Expired", "Damaged", "Theft", "Breakage", "Contamination", "Recall", "Other"];
+  const lossReasons = ['Expired', 'Damaged', 'Theft', 'Breakage', 'Contamination', 'Recall', 'Other'];
 
   useEffect(() => {
-    const fetchMedications = async () => {
+    const fetchStock = async () => {
       setLoading(true);
       try {
-        const response = await axiosInstance.get("/medications");
-        setMedications(response.data);
+        const response = await axiosInstance.get('/api/stock');
+        setMedications(
+          response.data.map((item: any) => ({
+            id: item.medicationId,
+            code: item.medication.code,
+            name: item.medication.name,
+            price: item.medication.price,
+            currentQuantity: item.currentQuantity,
+          }))
+        );
         setError(null);
       } catch (err: any) {
-        setError(err.response?.data?.error || "Failed to fetch medications");
+        setError(err.response?.data?.error || 'Failed to fetch stock');
         toast({
-          title: "Error",
-          description: err.response?.data?.error || "Failed to fetch medications",
-          variant: "destructive",
+          title: 'Error',
+          description: err.response?.data?.error || 'Failed to fetch stock',
+          variant: 'destructive',
         });
       } finally {
         setLoading(false);
       }
     };
-    fetchMedications();
+    fetchStock();
   }, []);
 
   const getSelectedMedicationDetails = () => {
@@ -67,26 +75,36 @@ export default function NewLoss() {
   };
 
   const resetForm = () => {
-    setSelectedMedication("");
-    setQuantity("");
-    setReason("");
-    setDescription("");
-    setLossDate("");
+    setSelectedMedication('');
+    setQuantity('');
+    setReason('');
+    setDescription('');
+    setLossDate('');
   };
 
   const saveLoss = async () => {
     if (!selectedMedication || !quantity || !reason || !lossDate) {
       toast({
-        title: "Error",
-        description: "Medication, quantity, reason, and loss date are required",
-        variant: "destructive",
+        title: 'Error',
+        description: 'Medication, quantity, reason, and loss date are required',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const med = getSelectedMedicationDetails();
+    if (med && Number(quantity) > med.currentQuantity) {
+      toast({
+        title: 'Error',
+        description: `Quantity ${quantity} exceeds available stock ${med.currentQuantity}`,
+        variant: 'destructive',
       });
       return;
     }
 
     setSaving(true);
     try {
-      const response = await axiosInstance.post("/losses", {
+      const response = await axiosInstance.post('/api/losses', {
         medicationId: Number(selectedMedication),
         userId,
         quantity: Number(quantity),
@@ -97,15 +115,15 @@ export default function NewLoss() {
       });
 
       toast({
-        title: "Success",
+        title: 'Success',
         description: `Loss ${response.data.id} recorded`,
       });
-      router.push("/losses");
+      router.push('/losses');
     } catch (err: any) {
       toast({
-        title: "Error",
-        description: err.response?.data?.error || "Failed to record loss",
-        variant: "destructive",
+        title: 'Error',
+        description: err.response?.data?.error || 'Failed to record loss',
+        variant: 'destructive',
       });
     } finally {
       setSaving(false);
@@ -133,7 +151,7 @@ export default function NewLoss() {
                     <SelectContent>
                       {medications.map((med) => (
                         <SelectItem key={med.id} value={med.id.toString()}>
-                          {med.name} ({med.code}) - ${Number(med.price).toFixed(2)}
+                          {med.name} ({med.code}) - ${Number(med.price).toFixed(2)} (Stock: {med.currentQuantity})
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -210,11 +228,11 @@ export default function NewLoss() {
                   disabled={!selectedMedication || !quantity || !reason || !lossDate || saving}
                   className="flex-1"
                 >
-                  {saving ? "Recording..." : "Record Loss"}
+                  {saving ? 'Recording...' : 'Record Loss'}
                 </Button>
                 <Button
                   variant="outline"
-                  onClick={() => router.push("/losses")}
+                  onClick={() => router.push('/losses')}
                   className="bg-transparent"
                 >
                   Cancel

@@ -10,9 +10,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
-import { Search, Plus, Minus, Trash2, ShoppingCart, Filter, Calendar, Package, DollarSign } from 'lucide-react';
+import { Search, Plus, Minus, Trash2, ShoppingCart, Filter, Calendar, Package, DollarSign, ChevronDown, ChevronUp } from 'lucide-react';
 import { toast } from '@/components/ui/use-toast';
-import { jwtDecode } from 'jwt-decode';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 
 interface Medication {
   id: number;
@@ -30,6 +30,13 @@ interface Medication {
   unitId: number | null;
 }
 
+interface SaleItem {
+  medicationId: number;
+  name: string;
+  quantity: number;
+  unitPrice: string;
+}
+
 interface Sale {
   id: number;
   totalAmount: string;
@@ -37,6 +44,7 @@ interface Sale {
   discountAmount: string;
   saleDate: string;
   username: string | null;
+  items: SaleItem[];
 }
 
 interface CartItem {
@@ -66,6 +74,10 @@ export default function SaleModule() {
   const [dateFilter, setDateFilter] = useState({ startDate: '', endDate: '' });
   const [selectedCashier, setSelectedCashier] = useState('all');
   const [billContent, setBillContent] = useState<string>('');
+  const [expandedSaleId, setExpandedSaleId] = useState<number | null>(null);
+  const [sortBy, setSortBy] = useState<'date-desc' | 'date-asc' | 'total-desc' | 'total-asc'>('date-desc');
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
 
   useEffect(() => {
     const fetchData = async () => {
@@ -101,6 +113,7 @@ export default function SaleModule() {
         setError(null);
       } catch (err: any) {
         setError(err.response?.data?.error || 'Failed to fetch data');
+        toast({ title: 'Error', description: err.response?.data?.error || 'Failed to fetch data', variant: 'destructive' });
       } finally {
         setLoading(false);
       }
@@ -122,6 +135,7 @@ export default function SaleModule() {
           setError(null);
         } catch (err: any) {
           setError(err.response?.data?.error || 'Failed to fetch sales');
+          toast({ title: 'Error', description: err.response?.data?.error || 'Failed to fetch sales', variant: 'destructive' });
         } finally {
           setLoading(false);
         }
@@ -133,6 +147,7 @@ export default function SaleModule() {
   const handleTabChange = (value: string) => {
     if (['sale', 'stock', 'reports'].includes(value)) {
       setActiveTab(value as 'sale' | 'stock' | 'reports');
+      setCurrentPage(1); // Reset pagination on tab change
     }
   };
 
@@ -187,7 +202,7 @@ export default function SaleModule() {
   };
 
   const generateBill = (saleId: number, cartItems: CartItem[], subtotal: number, tax: number, discount: number, total: number) => {
-    const now = '04:36 PM CAT, Saturday, October 11, 2025'; // Current date and time
+    const now = '04:16 PM CAT, Monday, October 20, 2025'; // Updated to current date and time
     const cashier = users.find(u => u.id === 1)?.username || 'Unknown'; // Replace with dynamic userId
     const maxLineWidth = 32; // Standard for 80mm thermal printers
 
@@ -340,6 +355,30 @@ export default function SaleModule() {
     } finally {
       setSaleLoading(false);
     }
+  };
+
+  // Sort and paginate sales
+  const sortedSales = [...sales].sort((a, b) => {
+    if (sortBy === 'date-desc') {
+      return new Date(b.saleDate).getTime() - new Date(a.saleDate).getTime();
+    } else if (sortBy === 'date-asc') {
+      return new Date(a.saleDate).getTime() - new Date(b.saleDate).getTime();
+    } else if (sortBy === 'total-desc') {
+      return Number(b.totalAmount) - Number(a.totalAmount);
+    } else {
+      return Number(a.totalAmount) - Number(b.totalAmount);
+    }
+  });
+
+  const paginatedSales = sortedSales.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
+  );
+
+  const totalPages = Math.ceil(sales.length / itemsPerPage);
+
+  const toggleExpand = (saleId: number) => {
+    setExpandedSaleId(expandedSaleId === saleId ? null : saleId);
   };
 
   const subtotal = cart.reduce((sum, item) => sum + Number(item.medication.price) * item.quantity, 0);
@@ -520,7 +559,6 @@ export default function SaleModule() {
                     Clear Cart
                   </Button>
 
-                  {/* Fallback Print Button for Debugging */}
                   {billContent && (
                     <Button
                       className="w-full mt-2"
@@ -530,7 +568,6 @@ export default function SaleModule() {
                     </Button>
                   )}
 
-                  {/* Bill Preview for Debugging */}
                   {billContent && (
                     <pre className="border p-4 mt-4 font-mono text-sm bg-gray-100">
                       {billContent}
@@ -635,7 +672,7 @@ export default function SaleModule() {
             <CardHeader>
               <CardTitle>Sales Reports</CardTitle>
               <CardDescription>Filter and view sales transaction history</CardDescription>
-              <div className="flex gap-4">
+              <div className="flex flex-col sm:flex-row gap-4">
                 <div className="flex items-center gap-2">
                   <Calendar className="h-4 w-4" />
                   <Input
@@ -665,32 +702,125 @@ export default function SaleModule() {
                     ))}
                   </SelectContent>
                 </Select>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" className="gap-2">
+                      <Filter className="h-4 w-4" />
+                      Sort by: {sortBy === 'date-desc' ? 'Date (Newest)' : sortBy === 'date-asc' ? 'Date (Oldest)' : sortBy === 'total-desc' ? 'Total (High to Low)' : 'Total (Low to High)'}
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent>
+                    <DropdownMenuLabel>Sort Options</DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={() => setSortBy('date-desc')}>
+                      Date (Newest First)
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setSortBy('date-asc')}>
+                      Date (Oldest First)
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setSortBy('total-desc')}>
+                      Total (High to Low)
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setSortBy('total-asc')}>
+                      Total (Low to High)
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
             </CardHeader>
             <CardContent>
               {loading && <div>Loading...</div>}
               {error && <div className="text-red-500">Error: {error}</div>}
               {!loading && !error && (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Sale ID</TableHead>
-                      <TableHead>Date</TableHead>
-                      <TableHead>Cashier</TableHead>
-                      <TableHead>Total</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {sales.map((sale) => (
-                      <TableRow key={sale.id}>
-                        <TableCell className="font-mono">{sale.id}</TableCell>
-                        <TableCell>{new Date(sale.saleDate).toLocaleDateString()}</TableCell>
-                        <TableCell>{sale.username}</TableCell>
-                        <TableCell className="font-bold">{Number(sale.totalAmount).toFixed(2)} FBu</TableCell>
+                <>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Sale ID</TableHead>
+                        <TableHead>Date</TableHead>
+                        <TableHead>Cashier</TableHead>
+                        <TableHead>Total</TableHead>
+                        <TableHead>Items</TableHead>
+                        <TableHead></TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                    </TableHeader>
+                    <TableBody>
+                      {paginatedSales.map((sale) => (
+                        <>
+                          <TableRow
+                            key={sale.id}
+                            className="cursor-pointer hover:bg-muted"
+                            onClick={() => toggleExpand(sale.id)}
+                          >
+                            <TableCell className="font-mono">{sale.id}</TableCell>
+                            <TableCell>{new Date(sale.saleDate).toLocaleDateString()}</TableCell>
+                            <TableCell>{sale.username || 'Unknown'}</TableCell>
+                            <TableCell className="font-bold">{Number(sale.totalAmount).toFixed(2)} FBu</TableCell>
+                            <TableCell>{sale.items.length}</TableCell>
+                            <TableCell>
+                              {expandedSaleId === sale.id ? (
+                                <ChevronUp className="h-4 w-4" />
+                              ) : (
+                                <ChevronDown className="h-4 w-4" />
+                              )}
+                            </TableCell>
+                          </TableRow>
+                          {expandedSaleId === sale.id && (
+                            <TableRow>
+                              <TableCell colSpan={6}>
+                                <div className="pl-8 pr-4 py-2 bg-muted/50">
+                                  <Table>
+                                    <TableHeader>
+                                      <TableRow>
+                                        <TableHead>Medication</TableHead>
+                                        <TableHead>Quantity</TableHead>
+                                        <TableHead>Unit Price</TableHead>
+                                        <TableHead>Total</TableHead>
+                                      </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                      {sale.items.map((item, index) => (
+                                        <TableRow key={`${sale.id}-${item.medicationId}-${index}`}>
+                                          <TableCell>{item.name}</TableCell>
+                                          <TableCell>{item.quantity}</TableCell>
+                                          <TableCell>{Number(item.unitPrice).toFixed(2)} FBu</TableCell>
+                                          <TableCell>
+                                            {(Number(item.unitPrice) * item.quantity).toFixed(2)} FBu
+                                          </TableCell>
+                                        </TableRow>
+                                      ))}
+                                    </TableBody>
+                                  </Table>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          )}
+                        </>
+                      ))}
+                    </TableBody>
+                  </Table>
+                  {totalPages > 1 && (
+                    <div className="flex justify-between items-center mt-4">
+                      <Button
+                        variant="outline"
+                        disabled={currentPage === 1}
+                        onClick={() => setCurrentPage(prev => prev - 1)}
+                      >
+                        Previous
+                      </Button>
+                      <span>
+                        Page {currentPage} of {totalPages}
+                      </span>
+                      <Button
+                        variant="outline"
+                        disabled={currentPage === totalPages}
+                        onClick={() => setCurrentPage(prev => prev + 1)}
+                      >
+                        Next
+                      </Button>
+                    </div>
+                  )}
+                </>
               )}
             </CardContent>
           </Card>

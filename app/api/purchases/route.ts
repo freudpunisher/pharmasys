@@ -1,4 +1,3 @@
-// app/api/purchases/route.ts
 import { type NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { purchases, purchaseItems, suppliers, medications, stock } from "@/lib/db/schema";
@@ -23,9 +22,19 @@ export async function GET(request: NextRequest) {
         status: purchases.status,
         supplierName: suppliers.name,
         supplierId: purchases.supplierId,
+        item: {
+          id: purchaseItems.id,
+          medicationId: purchaseItems.medicationId,
+          medicationName: medications.name,
+          quantity: purchaseItems.quantity,
+          unitPrice: purchaseItems.unitPrice,
+          expiryDate: purchaseItems.expiryDate,
+        },
       })
       .from(purchases)
       .leftJoin(suppliers, eq(purchases.supplierId, suppliers.id))
+      .leftJoin(purchaseItems, eq(purchases.id, purchaseItems.purchaseId))
+      .leftJoin(medications, eq(purchaseItems.medicationId, medications.id))
       .orderBy(desc(purchases.purchaseDate))
       .limit(limit)
       .offset(offset);
@@ -44,29 +53,60 @@ export async function GET(request: NextRequest) {
     let countQuery = db
       .select({ count: sql<number>`count(*)` })
       .from(purchases);
-    
+
     if (conditions.length > 0) {
       countQuery = countQuery.where(and(...conditions));
     }
 
-    const [allPurchases, totalResult] = await Promise.all([
+    const [rawPurchases, totalResult] = await Promise.all([
       query,
-      countQuery
+      countQuery,
     ]);
-    
+
     const totalCount = totalResult[0]?.count || 0;
     const totalPages = Math.ceil(totalCount / limit);
 
+    // Group purchase items by purchase
+    const purchasesMap = new Map();
+    for (const row of rawPurchases) {
+      const purchaseId = row.id;
+      if (!purchasesMap.has(purchaseId)) {
+        purchasesMap.set(purchaseId, {
+          id: row.id,
+          totalAmount: row.totalAmount,
+          purchaseDate: row.purchaseDate,
+          status: row.status,
+          supplierName: row.supplierName,
+          supplierId: row.supplierId,
+          items: [],
+        });
+      }
+      // Only add item if it exists (non-null)
+      if (row.item.id) {
+        purchasesMap.get(purchaseId).items.push({
+          id: row.item.id,
+          medicationId: row.item.medicationId,
+          medicationName: row.item.medicationName,
+          quantity: row.item.quantity,
+          unitPrice: row.item.unitPrice,
+          expiryDate: row.item.expiryDate,
+        });
+      }
+    }
+
+    // Convert map to array
+    const groupedPurchases = Array.from(purchasesMap.values());
+
     return NextResponse.json({
-      purchases: allPurchases,
+      purchases: groupedPurchases,
       pagination: {
         page,
         limit,
         totalCount,
         totalPages,
         hasNext: page < totalPages,
-        hasPrev: page > 1
-      }
+        hasPrev: page > 1,
+      },
     });
   } catch (error: any) {
     console.error("GET /api/purchases error:", {

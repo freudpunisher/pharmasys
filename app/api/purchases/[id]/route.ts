@@ -5,11 +5,13 @@ import { eq } from "drizzle-orm";
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const purchaseId = parseInt(params.id);
-    
+    // Await params to resolve the dynamic route parameter
+    const resolvedParams = await params;
+    const purchaseId = parseInt(resolvedParams.id);
+
     if (isNaN(purchaseId)) {
       return NextResponse.json(
         { error: "Invalid purchase ID" },
@@ -30,7 +32,7 @@ export async function GET(
           name: suppliers.name,
           phone: suppliers.phone,
           address: suppliers.address,
-        }
+        },
       })
       .from(purchases)
       .leftJoin(suppliers, eq(purchases.supplierId, suppliers.id))
@@ -58,7 +60,7 @@ export async function GET(
           name: medications.name,
           unit: units.name,
           family: families.name,
-        }
+        },
       })
       .from(purchaseItems)
       .leftJoin(medications, eq(purchaseItems.medicationId, medications.id))
@@ -66,9 +68,23 @@ export async function GET(
       .leftJoin(units, eq(medications.unitId, units.id))
       .where(eq(purchaseItems.purchaseId, purchaseId));
 
+    // Sanitize items to handle missing medication data
+    const sanitizedItems = items.map(item => ({
+      ...item,
+      medication: item.medication.id
+        ? item.medication
+        : {
+            id: item.medicationId,
+            code: "Unknown",
+            name: "Unknown Medication",
+            unit: null,
+            family: null,
+          },
+    }));
+
     const purchase = {
       ...purchaseData[0],
-      items
+      items: sanitizedItems,
     };
 
     return NextResponse.json(purchase);
@@ -76,6 +92,7 @@ export async function GET(
     console.error("GET /api/purchases/[id] error:", {
       message: error.message,
       stack: error.stack,
+      purchaseId: params ? (await params).id : "unknown",
     });
     return NextResponse.json(
       { error: "Failed to fetch purchase details" },
