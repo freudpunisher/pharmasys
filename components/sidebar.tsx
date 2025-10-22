@@ -1,84 +1,81 @@
-"use client"
+'use client';
 
-import { cn } from "@/lib/utils"
-import { Button } from "@/components/ui/button"
-import {
-  BarChart3,
-  DollarSign,
-  ShoppingCart,
-  Package,
-  Warehouse,
-  X,
-  FileText,
-  Settings,
-  ChevronLeft,
-  ChevronRight,
-} from "lucide-react"
+import { useRouter } from "next/navigation";
+import { Button } from "@/components/ui/button";
+import { 
+  LayoutGrid, 
+  ShoppingCart, 
+  Package, 
+  Warehouse, 
+  FileText, 
+  AlertCircle, 
+  BarChart2, 
+  Settings 
+} from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface SidebarProps {
-  activeModule: string
-  onModuleChange: (module: string) => void
-  collapsed: boolean
-  onToggleCollapse: () => void
+  activeModule: string;
+  collapsed: boolean;
+  onToggleCollapse: () => void;
+  userRole: string;
 }
 
-const menuItems = [
-  { id: "dashboard", label: "Dashboard", icon: BarChart3 },
-  { id: "sale", label: "Sale", icon: DollarSign },
-  { id: "purchase", label: "Purchase", icon: ShoppingCart },
-  { id: "stock", label: "Stock", icon: Warehouse },
-  { id: "inventory", label: "Inventory", icon: Package },
-  { id: "loss", label: "Loss", icon: X },
-  { id: "reports", label: "Reports", icon: FileText },
-  { id: "settings", label: "Settings", icon: Settings },
-]
+// Define which roles can access which modules
+const rolePermissions: Record<string, string[]> = {
+  admin: ["dashboard", "sales", "purchases", "stock", "inventory", "losses", "reports", "settings"],
+  manager: ["dashboard", "sales", "purchases", "stock", "inventory", "losses", "reports"],
+  pharmacist: ["dashboard", "sales", "stock", "inventory"],
+  cashier: ["dashboard", "sales"],
+  inventory_manager: ["dashboard", "stock", "inventory", "purchases"],
+};
 
-export function Sidebar({ activeModule, onModuleChange, collapsed, onToggleCollapse }: SidebarProps) {
+export function Sidebar({ activeModule, collapsed, onToggleCollapse, userRole }: SidebarProps) {
+  const router = useRouter();
+
+  const allModules = [
+    { id: "dashboard", label: "Dashboard", icon: LayoutGrid, path: "/dashboard" },
+    { id: "sales", label: "Sales", icon: ShoppingCart, path: "/sales" },
+    { id: "purchases", label: "Purchases", icon: Package, path: "/purchases" },
+    { id: "stock", label: "Stock", icon: Warehouse, path: "/stock" },
+    { id: "inventory", label: "Inventory", icon: FileText, path: "/inventory" },
+    { id: "losses", label: "Losses", icon: AlertCircle, path: "/losses" },
+    { id: "reports", label: "Reports", icon: BarChart2, path: "/reports" },
+    { id: "settings", label: "Settings", icon: Settings, path: "/settings" },
+  ];
+
+  // Filter modules based on user role
+  const allowedModuleIds = rolePermissions[userRole] || ["dashboard"];
+  const modules = allModules.filter(module => allowedModuleIds.includes(module.id));
+
   return (
-    <div
+    <aside
       className={cn(
-        "bg-sidebar border-r border-sidebar-border flex flex-col transition-all duration-300",
-        collapsed ? "w-16" : "w-64",
+        "bg-card border-r transition-all duration-300 ease-in-out",
+        collapsed ? "w-16" : "w-64"
       )}
     >
-      {/* Header */}
-      <div className="p-4 border-b border-sidebar-border flex items-center justify-between">
-        {!collapsed && <h1 className="text-lg font-heading font-bold text-sidebar-foreground">PharmaCare</h1>}
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={onToggleCollapse}
-          className="text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-        >
-          {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
-        </Button>
-      </div>
-
-      {/* Navigation */}
-      <nav className="flex-1 p-4 space-y-2">
-        {menuItems.map((item) => {
-          const Icon = item.icon
-          const isActive = activeModule === item.id
-
-          return (
+      <div className="flex flex-col h-full">
+        <div className="p-4 flex items-center justify-between">
+          {!collapsed && <h1 className="text-xl font-bold">Pharmacy</h1>}
+          <Button variant="ghost" size="icon" onClick={onToggleCollapse}>
+            {collapsed ? ">" : "<"}
+          </Button>
+        </div>
+        <nav className="flex-1">
+          {modules.map((module) => (
             <Button
-              key={item.id}
-              variant={isActive ? "default" : "ghost"}
-              className={cn(
-                "w-full justify-start gap-3 h-11",
-                isActive
-                  ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                  : "text-sidebar-foreground hover:bg-sidebar-primary hover:text-sidebar-primary-foreground",
-                collapsed && "justify-center px-2",
-              )}
-              onClick={() => onModuleChange(item.id)}
+              key={module.id}
+              variant={activeModule === module.id ? "secondary" : "ghost"}
+              className={cn("w-full justify-start", collapsed && "px-2")}
+              onClick={() => router.push(module.path)}
             >
-              <Icon className="h-5 w-5 flex-shrink-0" />
-              {!collapsed && <span className="font-medium">{item.label}</span>}
+              <module.icon className={cn("h-5 w-5", !collapsed && "mr-2")} />
+              {!collapsed && <span>{module.label}</span>}
             </Button>
-          )
-        })}
-      </nav>
-    </div>
-  )
+          ))}
+        </nav>
+      </div>
+    </aside>
+  );
 }

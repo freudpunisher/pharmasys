@@ -1,7 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { sales, saleItems, purchases, purchaseItems, losses, stock, inventoryItems, medications, users, inventories } from "@/lib/db/schema";
-import { eq, gte, lte, and, sql, desc } from "drizzle-orm";
+import { sales, saleItems, purchases, purchaseItems, losses, stock, inventoryItems, medications, inventories } from "@/lib/db/schema";
+import { eq, gte, lte, and, sql } from "drizzle-orm";
 
 export async function GET(request: NextRequest) {
   try {
@@ -13,7 +13,6 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get("limit") || "10");
     const offset = (page - 1) * limit;
 
-    // Build conditions for filtering
     const salesConditions = [];
     const purchasesConditions = [];
     const lossesConditions = [];
@@ -35,7 +34,6 @@ export async function GET(request: NextRequest) {
       lossesConditions.push(eq(losses.userId, parseInt(userId)));
     }
 
-    // Query for medication report data
     const reportQuery = db
       .select({
         medicationId: medications.id,
@@ -60,7 +58,6 @@ export async function GET(request: NextRequest) {
       .limit(limit)
       .offset(offset);
 
-    // Count total medications for pagination
     const countQuery = db
       .select({ count: sql<number>`count(*)`.as("count") })
       .from(medications);
@@ -70,7 +67,6 @@ export async function GET(request: NextRequest) {
     const totalCount = totalCountResult[0]?.count || 0;
     const totalPages = Math.ceil(totalCount / limit);
 
-    // Calculate overall totals
     const [salesTotal, purchasesTotal, lossesTotal] = await Promise.all([
       db.select({ total: sql<number>`COALESCE(SUM(${sales.totalAmount}), 0)`.as("total") })
         .from(sales)
@@ -88,11 +84,11 @@ export async function GET(request: NextRequest) {
     const totalLosses = Number(lossesTotal[0]?.total || 0);
     const totalProfit = totalSales - totalPurchases - totalLosses;
 
-    console.log("[06:23 PM CAT, 2025-10-20] GET /api/reports query:", {
+    console.log("[09:15 AM CAT, 2025-10-22] GET /api/reports query:", {
       sql: reportQuery.toSQL(),
       params: { startDate, endDate, userId, page, limit },
     });
-    console.log("[06:23 PM CAT, 2025-10-20] GET /api/reports result:", {
+    console.log("[09:15 AM CAT, 2025-10-22] GET /api/reports result:", {
       count: reportData.length,
       totalCount,
       totalProfit: totalProfit.toFixed(2),
@@ -119,7 +115,7 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error: any) {
-    console.error("[06:23 PM CAT, 2025-10-20] GET /api/reports error:", {
+    console.error("[09:15 AM CAT, 2025-10-22] GET /api/reports error:", {
       message: error.message,
       stack: error.stack,
       url: request.url,
