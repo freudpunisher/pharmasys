@@ -1,248 +1,187 @@
+'use client';
 
-"use client";
+import { useState, useEffect, useRef } from 'react';
+import { useReactToPrint } from 'react-to-print';
+import axiosInstance from '@/lib/axiosInstance';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { toast } from '@/components/ui/use-toast';
+import { Printer, ArrowUpDown } from 'lucide-react';
 
-import { useState, useMemo } from "react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Label } from "@/components/ui/label";
-import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
-import { LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, ResponsiveContainer } from "recharts";
-import { Download, Filter, DollarSign, TrendingUp, Package, Users, AlertTriangle } from "lucide-react";
+interface User {
+  id: number;
+  username: string;
+}
 
-// Mock data
-const productReportData = [
-  { name: "Paracetamol", unit: "Tablets", quantity: 2450, sale: 2450 * 5.99, loss: 10, inventory: 150, prime: 40, date: "2024-01-15" },
-  { name: "Amoxicillin", unit: "Capsules", quantity: 1875, sale: 1875 * 12.5, loss: 5, inventory: 75, prime: 35, date: "2024-01-12" },
-  { name: "Ibuprofen", unit: "Tablets", quantity: 1650, sale: 1650 * 8.25, loss: 0, inventory: 200, prime: 38, date: "2024-02-10" },
-  { name: "Cough Syrup", unit: "Bottles", quantity: 945, sale: 945 * 15.75, loss: 2, inventory: 45, prime: 30, date: "2024-03-05" },
-  { name: "Vitamins", unit: "Tablets", quantity: 720, sale: 720 * 10.0, loss: 0, inventory: 100, prime: 25, date: "2024-04-01" },
-];
+interface MedicationReport {
+  medicationId: number;
+  medicationCode: string;
+  medicationName: string;
+  totalSales: number;
+  totalPurchases: number;
+  totalLosses: number;
+  currentQuantity: number;
+  inventoryDifference: number;
+  profit: string;
+}
 
-const salesByMedicationData = [
-  { medication: "Paracetamol", sales: 2450, profit: 980 },
-  { medication: "Amoxicillin", sales: 1875, profit: 750 },
-  { medication: "Ibuprofen", sales: 1650, profit: 660 },
-  { medication: "Cough Syrup", sales: 945, profit: 378 },
-  { medication: "Vitamins", sales: 720, profit: 288 },
-];
+interface PaginationInfo {
+  page: number;
+  limit: number;
+  totalCount: number;
+  totalPages: number;
+  hasNext: boolean;
+  hasPrev: boolean;
+}
 
-const monthlyTrendsData = [
-  { month: "Jan", sales: 12500, purchases: 8200, profit: 4300 },
-  { month: "Feb", sales: 13200, purchases: 8800, profit: 4400 },
-  { month: "Mar", sales: 11800, purchases: 7900, profit: 3900 },
-  { month: "Apr", sales: 14500, purchases: 9200, profit: 5300 },
-  { month: "May", sales: 15200, purchases: 9800, profit: 5400 },
-  { month: "Jun", sales: 16100, purchases: 10200, profit: 5900 },
-];
-
-const salesByFamilyData = [
-  { name: "Painkillers", value: 35, color: "#0891b2" },
-  { name: "Antibiotics", value: 25, color: "#f97316" },
-  { name: "Syrups", value: 20, color: "#10b981" },
-  { name: "Vitamins", value: 12, color: "#8b5cf6" },
-  { name: "Others", value: 8, color: "#f59e0b" },
-];
-
-const topPerformersData = [
-  { cashier: "Dr. Smith", sales: 45, revenue: 12450 },
-  { cashier: "Pharmacist A", sales: 38, revenue: 10200 },
-  { cashier: "Pharmacist B", sales: 32, revenue: 8750 },
-  { cashier: "Dr. Johnson", sales: 28, revenue: 7800 },
-];
+interface ReportSummary {
+  totalProfit: string;
+  totalSales: string;
+  totalPurchases: string;
+  totalLosses: string;
+}
 
 export default function ReportsModule() {
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
-  const [selectedFamily, setSelectedFamily] = useState("all");
-  const [selectedSupplier, setSelectedSupplier] = useState("all");
-  const [selectedUser, setSelectedUser] = useState("all");
-  const [productFilter, setProductFilter] = useState("");
+  const [report, setReport] = useState<MedicationReport[]>([]);
+  const [summary, setSummary] = useState<ReportSummary | null>(null);
+  const [users, setUsers] = useState<User[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [selectedUser, setSelectedUser] = useState('all');
+  const [sortBy, setSortBy] = useState<string>('medicationName');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+  const [pagination, setPagination] = useState<PaginationInfo>({
+    page: 1,
+    limit: 10,
+    totalCount: 0,
+    totalPages: 0,
+    hasNext: false,
+    hasPrev: false,
+  });
+  const componentRef = useRef<HTMLDivElement>(null);
 
-  const families = ["Painkillers", "Antibiotics", "Syrups", "Vitamins", "Others"];
-  const suppliers = ["MedSupply Co.", "PharmaCorp Ltd.", "HealthDist Inc."];
-  const users = ["Dr. Smith", "Pharmacist A", "Pharmacist B", "Dr. Johnson"];
+  const handlePrint = useReactToPrint({
+    content: () => componentRef.current || null,
+    documentTitle: `Pharmacy_Profit_Report_${new Date().toISOString().split('T')[0]}`,
+  });
 
-  // Filter product report data
-  const filteredProductData = useMemo(() => {
-    return productReportData.filter((item) => {
-      const itemDate = new Date(item.date);
-      const from = dateFrom ? new Date(dateFrom) : null;
-      const to = dateTo ? new Date(dateTo) : null;
-      const nameMatch = productFilter ? item.name.toLowerCase().includes(productFilter.toLowerCase()) : true;
-      const dateMatch =
-        (!from || itemDate >= from) && (!to || itemDate <= to);
-      return nameMatch && dateMatch;
-    });
-  }, [dateFrom, dateTo, productFilter]);
-
-  // Update KPI calculations based on filtered data
-  const kpiData = useMemo(() => {
-    const totalProfit = filteredProductData.reduce((sum, item) => sum + (item.sale * (item.prime / 100)), 0);
-    const totalLosses = filteredProductData.reduce((sum, item) => sum + item.loss, 0);
-    const bestSellingItem = filteredProductData.reduce((prev, curr) => (curr.quantity > prev.quantity ? curr : prev), filteredProductData[0] || { name: "N/A", quantity: 0 });
-    const topPerformer = topPerformersData.reduce((prev, curr) => (curr.revenue > prev.revenue ? curr : prev), topPerformersData[0] || { cashier: "N/A", revenue: 0 });
-
-    return {
-      totalProfit: totalProfit.toFixed(2),
-      bestSellingItem: bestSellingItem.name,
-      bestSellingQuantity: bestSellingItem.quantity,
-      totalLosses: totalLosses.toFixed(0),
-      totalLossValue: filteredProductData.reduce((sum, item) => sum + (item.loss * (item.sale / item.quantity)), 0).toFixed(2),
-      topPerformer: topPerformer.cashier,
-      topPerformerRevenue: topPerformer.revenue,
+  useEffect(() => {
+    const fetchUsers = async () => {
+      try {
+        const response = await axiosInstance.get('/api/users');
+        setUsers(response.data);
+      } catch (err) {
+        console.error('[06:51 PM CAT, 2025-10-20] Error fetching users:', err);
+      }
     };
-  }, [filteredProductData]);
+    fetchUsers();
+  }, []);
 
-  // Filter chart data (optional, kept static for simplicity)
-  const filteredMonthlyTrends = monthlyTrendsData; // Could filter by date range if needed
-  const filteredSalesByFamily = salesByFamilyData; // Could filter by family if needed
-  const filteredSalesByMedication = salesByMedicationData.filter((item) =>
-    filteredProductData.some((product) => product.name === item.medication)
-  );
-  const filteredTopPerformers = topPerformersData.filter((item) =>
-    selectedUser === "all" || item.cashier === selectedUser
-  );
+  useEffect(() => {
+    const fetchReport = async () => {
+      if (startDate && endDate && new Date(startDate) > new Date(endDate)) {
+        toast({
+          title: 'Invalid Date Range',
+          description: 'Start date must be before or equal to end date',
+          variant: 'destructive',
+        });
+        return;
+      }
 
-  // Generate LaTeX for PDF
-  const generatePDF = () => {
-    const latexContent = `
-\\documentclass[a4paper]{article}
-\\usepackage{geometry}
-\\geometry{margin=1in}
-\\usepackage{booktabs}
-\\usepackage{pdflscape}
-\\usepackage{siunitx}
-\\sisetup{round-mode=places, round-precision=2}
-\\usepackage[utf8]{inputenc}
-\\usepackage[T1]{fontenc}
-\\usepackage{lmodern}
-\\usepackage{xcolor}
-\\definecolor{primary}{HTML}{0891b2}
-\\definecolor{destructive}{HTML}{dc2626}
+      setLoading(true);
+      try {
+        const params = new URLSearchParams();
+        if (startDate) params.append('startDate', startDate);
+        if (endDate) params.append('endDate', endDate);
+        if (selectedUser !== 'all') params.append('userId', selectedUser);
+        params.append('page', pagination.page.toString());
+        params.append('limit', pagination.limit.toString());
 
-\\begin{document}
+        const response = await axiosInstance.get(`/api/reports?${params}`);
+        const sortedReport = [...response.data.medications].sort((a, b) => {
+          const aValue = a[sortBy as keyof MedicationReport];
+          const bValue = b[sortBy as keyof MedicationReport];
+          if (typeof aValue === 'string' && typeof bValue === 'string') {
+            return sortOrder === 'asc' ? aValue.localeCompare(bValue) : bValue.localeCompare(aValue);
+          }
+          return sortOrder === 'asc' ? Number(aValue) - Number(bValue) : Number(bValue) - Number(aValue);
+        });
+        setReport(sortedReport);
+        setSummary(response.data.summary);
+        setPagination(response.data.pagination);
+        setError(null);
+      } catch (err: any) {
+        const errorMessage = err.response?.data?.error || 'Failed to fetch report';
+        setError(errorMessage);
+        toast({ title: 'Error', description: errorMessage, variant: 'destructive' });
+        console.error('[06:51 PM CAT, 2025-10-20] Error fetching report:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchReport();
+  }, [startDate, endDate, selectedUser, pagination.page, pagination.limit, sortBy, sortOrder]);
 
-\\begin{center}
-  \\textbf{\\Large Pharmacy Product Report} \\\\
-  \\vspace{0.2cm}
-  \\small Generated on ${new Date().toLocaleDateString()}
-\\end{center}
-
-\\vspace{0.5cm}
-
-\\begin{flushleft}
-  \\textbf{Filters Applied:} \\\\
-  Date From: ${dateFrom || "N/A"} \\\\
-  Date To: ${dateTo || "N/A"} \\\\
-  Product Name: ${productFilter || "All"}
-\\end{flushleft}
-
-\\vspace{0.5cm}
-
-\\begin{landscape}
-\\begin{table}[h]
-  \\centering
-  \\caption{Product Report}
-  \\begin{tabular}{llS[table-format=4.0]S[table-format=6.2]S[table-format=3.0]S[table-format=3.0]S[table-format=2.0]l}
-    \\toprule
-    \\textbf{Name} & \\textbf{Unit} & \\textbf{Quantity} & \\textbf{Sale (\\$)} & \\textbf{Loss} & \\textbf{Inventory} & \\textbf{Prime (\\%)} & \\textbf{Date} \\\\
-    \\midrule
-${filteredProductData
-  .map(
-    (item) =>
-      `    ${item.name} & ${item.unit} & ${item.quantity} & ${item.sale.toFixed(2)} & ${item.loss} & ${item.inventory} & ${item.prime} & ${item.date} \\\\`
-  )
-  .join("\n")}
-    \\bottomrule
-  \\end{tabular}
-\\end{table}
-\\end{landscape}
-
-\\end{document}
-`;
-
-    const blob = new Blob([latexContent], { type: "text/plain" });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "product_report.tex";
-    a.click();
-    window.URL.revokeObjectURL(url);
+  const handleSort = (column: string) => {
+    if (sortBy === column) {
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortBy(column);
+      setSortOrder('asc');
+    }
   };
 
   return (
     <div className="container mx-auto p-6 space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-heading font-bold">Reports & Analytics</h1>
-        <div className="flex gap-2">
-          <Button variant="outline" className="gap-2 bg-transparent" onClick={generatePDF}>
-            <Download className="h-4 w-4" />
-            Export PDF
-          </Button>
-          <Button variant="outline" className="gap-2 bg-transparent">
-            <Download className="h-4 w-4" />
-            Export Excel
-          </Button>
-        </div>
+        <h1 className="text-3xl font-heading font-bold">Profit Report</h1>
+        <Button onClick={handlePrint} className="gap-2">
+          <Printer className="h-4 w-4" />
+          Print Report
+        </Button>
       </div>
 
-      {/* Filters */}
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Filter className="h-5 w-5" />
-            Report Filters
-          </CardTitle>
-          <CardDescription>Filter data to generate specific reports</CardDescription>
+          <CardTitle className="flex items-center gap-2">Filters</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="space-y-2">
-              <Label>Date From</Label>
-              <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
-            </div>
-            <div className="space-y-2">
-              <Label>Date To</Label>
-              <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
-            </div>
-            <div className="space-y-2">
-              <Label>Product Name</Label>
+              <Label htmlFor="start-date">Start Date</Label>
               <Input
-                value={productFilter}
-                onChange={(e) => setProductFilter(e.target.value)}
-                placeholder="Filter by product name"
+                id="start-date"
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
               />
             </div>
             <div className="space-y-2">
-              <Label>Family</Label>
-              <Select value={selectedFamily} onValueChange={setSelectedFamily}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Families</SelectItem>
-                  {families.map((family) => (
-                    <SelectItem key={family} value={family}>
-                      {family}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Label htmlFor="end-date">End Date</Label>
+              <Input
+                id="end-date"
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+              />
             </div>
             <div className="space-y-2">
-              <Label>User</Label>
+              <Label htmlFor="user">User</Label>
               <Select value={selectedUser} onValueChange={setSelectedUser}>
                 <SelectTrigger>
-                  <SelectValue />
+                  <SelectValue placeholder="All users" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Users</SelectItem>
                   {users.map((user) => (
-                    <SelectItem key={user} value={user}>
-                      {user}
+                    <SelectItem key={user.id} value={user.id.toString()}>
+                      {user.username}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -252,213 +191,169 @@ ${filteredProductData
         </CardContent>
       </Card>
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Profit</CardTitle>
-            <DollarSign className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-primary">${kpiData.totalProfit}</div>
-            <p className="text-xs text-muted-foreground">
-              <TrendingUp className="inline h-3 w-3 mr-1" />
-              Filtered data
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Best Selling Item</CardTitle>
-            <Package className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{kpiData.bestSellingItem}</div>
-            <p className="text-xs text-muted-foreground">{kpiData.bestSellingQuantity} units sold</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Losses</CardTitle>
-            <AlertTriangle className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-destructive">${kpiData.totalLossValue}</div>
-            <p className="text-xs text-muted-foreground">{kpiData.totalLosses} items lost</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Top Performer</CardTitle>
-            <Users className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{kpiData.topPerformer}</div>
-            <p className="text-xs text-muted-foreground">${kpiData.topPerformerRevenue.toLocaleString()} in sales</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Product Report Table */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Product Report</CardTitle>
-          <CardDescription>Detailed product performance metrics</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Unit</TableHead>
-                <TableHead>Quantity</TableHead>
-                <TableHead>Sale ($)</TableHead>
-                <TableHead>Loss</TableHead>
-                <TableHead>Inventory</TableHead>
-                <TableHead>Prime (%)</TableHead>
-                <TableHead>Date</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredProductData.map((item) => (
-                <TableRow key={item.name}>
-                  <TableCell className="font-medium">{item.name}</TableCell>
-                  <TableCell>{item.unit}</TableCell>
-                  <TableCell>{item.quantity.toLocaleString()}</TableCell>
-                  <TableCell className="text-primary font-bold">${item.sale.toFixed(2)}</TableCell>
-                  <TableCell className="text-destructive">{item.loss}</TableCell>
-                  <TableCell>{item.inventory}</TableCell>
-                  <TableCell>{item.prime}%</TableCell>
-                  <TableCell>{item.date}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
-
-      {/* Charts Section */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div ref={componentRef} className="print-section space-y-6">
         <Card>
           <CardHeader>
-            <CardTitle>Monthly Trends</CardTitle>
-            <CardDescription>Sales, purchases, and profit over time</CardDescription>
+            <CardTitle>Profit Summary</CardTitle>
+            <CardDescription>Overview of financial performance</CardDescription>
           </CardHeader>
           <CardContent>
-            <ChartContainer
-              config={{
-                sales: { label: "Sales", color: "hsl(var(--primary))" },
-                purchases: { label: "Purchases", color: "hsl(var(--secondary))" },
-                profit: { label: "Profit", color: "hsl(var(--chart-3))" },
-              }}
-              className="h-[300px]"
-            >
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={filteredMonthlyTrends}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="month" />
-                  <YAxis />
-                  <ChartTooltip content={<ChartTooltipContent />} />
-                  <Line type="monotone" dataKey="sales" stroke="var(--color-sales)" strokeWidth={2} />
-                  <Line type="monotone" dataKey="purchases" stroke="var(--color-purchases)" strokeWidth={2} />
-                  <Line type="monotone" dataKey="profit" stroke="var(--color-profit)" strokeWidth={2} />
-                </LineChart>
-              </ResponsiveContainer>
-            </ChartContainer>
+            {loading && <div>Loading...</div>}
+            {error && <div className="text-red-500">Error: {error}</div>}
+            {summary && (
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium">Total Profit</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold text-green-600">{summary.totalProfit} FBU</div>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium">Total Sales</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">{summary.totalSales} FBU</div>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium">Total Purchases</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">{summary.totalPurchases} FBU</div>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium">Total Losses</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold text-red-600">{summary.totalLosses} FBU</div>
+                  </CardContent>
+                </Card>
+              </div>
+            )}
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader>
-            <CardTitle>Sales by Family</CardTitle>
-            <CardDescription>Distribution of sales across medication families</CardDescription>
+            <CardTitle>Medication Performance</CardTitle>
+            <CardDescription>
+              Showing {report.length} of {pagination.totalCount} medications
+            </CardDescription>
           </CardHeader>
           <CardContent>
-            <ChartContainer
-              config={{
-                value: { label: "Percentage", color: "hsl(var(--primary))" },
-              }}
-              className="h-[300px]"
-            >
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={filteredSalesByFamily}
-                    cx="50%"
-                    cy="50%"
-                    outerRadius={80}
-                    fill="#8884d8"
-                    dataKey="value"
-                    label={({ name, value }) => `${name}: ${value}%`}
-                  >
-                    {filteredSalesByFamily.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
+            {loading && <div>Loading...</div>}
+            {error && <div className="text-red-500">Error: {error}</div>}
+            {!loading && !error && (
+              <>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>
+                        <Button variant="ghost" onClick={() => handleSort('medicationCode')} className="flex items-center gap-1">
+                          Code
+                          <ArrowUpDown className="h-4 w-4" />
+                        </Button>
+                      </TableHead>
+                      <TableHead>
+                        <Button variant="ghost" onClick={() => handleSort('medicationName')} className="flex items-center gap-1">
+                          Name
+                          <ArrowUpDown className="h-4 w-4" />
+                        </Button>
+                      </TableHead>
+                      <TableHead>
+                        <Button variant="ghost" onClick={() => handleSort('totalSales')} className="flex items-center gap-1">
+                          Sales (FBU)
+                          <ArrowUpDown className="h-4 w-4" />
+                        </Button>
+                      </TableHead>
+                      <TableHead>
+                        <Button variant="ghost" onClick={() => handleSort('totalPurchases')} className="flex items-center gap-1">
+                          Purchases (FBU)
+                          <ArrowUpDown className="h-4 w-4" />
+                        </Button>
+                      </TableHead>
+                      <TableHead>
+                        <Button variant="ghost" onClick={() => handleSort('totalLosses')} className="flex items-center gap-1">
+                          Losses (FBU)
+                          <ArrowUpDown className="h-4 w-4" />
+                        </Button>
+                      </TableHead>
+                      <TableHead>
+                        <Button variant="ghost" onClick={() => handleSort('currentQuantity')} className="flex items-center gap-1">
+                          Stock
+                          <ArrowUpDown className="h-4 w-4" />
+                        </Button>
+                      </TableHead>
+                      <TableHead>
+                        <Button variant="ghost" onClick={() => handleSort('inventoryDifference')} className="flex items-center gap-1">
+                          Inv. Diff.
+                          <ArrowUpDown className="h-4 w-4" />
+                        </Button>
+                      </TableHead>
+                      <TableHead>
+                        <Button variant="ghost" onClick={() => handleSort('profit')} className="flex items-center gap-1">
+                          Profit (FBU)
+                          <ArrowUpDown className="h-4 w-4" />
+                        </Button>
+                      </TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {report.map((item) => (
+                      <TableRow key={item.medicationId}>
+                        <TableCell className="font-mono">{item.medicationCode}</TableCell>
+                        <TableCell>{item.medicationName}</TableCell>
+                        <TableCell>{item.totalSales} FBU</TableCell>
+                        <TableCell>{item.totalPurchases} FBU</TableCell>
+                        <TableCell className="text-red-600">{item.totalLosses} FBU</TableCell>
+                        <TableCell>{item.currentQuantity}</TableCell>
+                        <TableCell className={item.inventoryDifference !== 0 ? 'text-red-600' : ''}>
+                          {item.inventoryDifference}
+                        </TableCell>
+                        <TableCell className={Number(item.profit) >= 0 ? 'text-green-600' : 'text-red-600'}>
+                          {item.profit} FBU
+                        </TableCell>
+                      </TableRow>
                     ))}
-                  </Pie>
-                  <ChartTooltip content={<ChartTooltipContent />} />
-                </PieChart>
-              </ResponsiveContainer>
-            </ChartContainer>
-          </CardContent>
-        </Card>
-      </div>
+                  </TableBody>
+                </Table>
 
-      {/* Detailed Tables */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card>
-          <CardHeader>
-            <CardTitle>Sales by Medication</CardTitle>
-            <CardDescription>Top performing medications</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Medication</TableHead>
-                  <TableHead>Sales</TableHead>
-                  <TableHead>Profit</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredSalesByMedication.map((item) => (
-                  <TableRow key={item.medication}>
-                    <TableCell className="font-medium">{item.medication}</TableCell>
-                    <TableCell>${item.sales.toLocaleString()}</TableCell>
-                    <TableCell className="text-primary font-bold">${item.profit.toLocaleString()}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Top Performers</CardTitle>
-            <CardDescription>Staff performance by sales</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Cashier</TableHead>
-                  <TableHead>Sales Count</TableHead>
-                  <TableHead>Revenue</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredTopPerformers.map((performer) => (
-                  <TableRow key={performer.cashier}>
-                    <TableCell className="font-medium">{performer.cashier}</TableCell>
-                    <TableCell>{performer.sales}</TableCell>
-                    <TableCell className="text-primary font-bold">${performer.revenue.toLocaleString()}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                {pagination.totalPages > 1 && (
+                  <div className="flex items-center justify-between mt-4">
+                    <div className="text-sm text-muted-foreground">
+                      Showing page {pagination.page} of {pagination.totalPages} ({pagination.totalCount} medications)
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setPagination({ ...pagination, page: pagination.page - 1 })}
+                        disabled={!pagination.hasPrev}
+                      >
+                        Previous
+                      </Button>
+                      <span className="text-sm text-muted-foreground">
+                        Page {pagination.page} of {pagination.totalPages}
+                      </span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setPagination({ ...pagination, page: pagination.page + 1 })}
+                        disabled={!pagination.hasNext}
+                      >
+                        Next
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
           </CardContent>
         </Card>
       </div>

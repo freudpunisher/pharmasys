@@ -79,7 +79,7 @@ const resourceConfigs: Record<ResourceType, ResourceConfig> = {
       <TableCell key="family">{item.family}</TableCell>,
       <TableCell key="unit">{item.unit}</TableCell>,
       <TableCell key="alertLevel">{item.alertLevel}</TableCell>,
-      <TableCell key="price" className="font-bold">${item.price}</TableCell>,
+      <TableCell key="price" className="font-bold">{item.price}FBU</TableCell>,
       <TableCell key="stockQuantity">{item.stockQuantity}</TableCell>,
     ],
   },

@@ -83,6 +83,7 @@
     "react-hook-form": "^7.60.0",
     "react-is": "^19.1.1",
     "react-resizable-panels": "^2.1.7",
+    "react-to-print": "^3.2.0",
     "recharts": "latest",
     "sonner": "^1.7.4",
     "sql.js": "latest",
