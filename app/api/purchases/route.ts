@@ -2,6 +2,8 @@ import { type NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { purchases, purchaseItems, suppliers, medications, stock } from "@/lib/db/schema";
 import { eq, sql, desc, and, gte, lte, like } from "drizzle-orm";
+import { recordBulkStockMovements } from "@/lib/services/stock-service";
+
 
 export async function GET(request: NextRequest) {
   try {
@@ -14,7 +16,8 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get("limit") || "10");
     const offset = (page - 1) * limit;
 
-    let query = db
+    let query: any = db
+
       .select({
         id: purchases.id,
         totalAmount: purchases.totalAmount,
@@ -50,8 +53,9 @@ export async function GET(request: NextRequest) {
     }
 
     // Get total count for pagination
-    let countQuery = db
+    let countQuery: any = db
       .select({ count: sql<number>`count(*)` })
+
       .from(purchases);
 
     if (conditions.length > 0) {
@@ -298,10 +302,24 @@ export async function PUT(request: NextRequest) {
             })
             .where(eq(stock.medicationId, item.medicationId));
         }
-        
+
+
         console.log(`Stock updated for ${items.length} items in purchase ${purchaseId}`);
+
+        // Record stock movements
+        await recordBulkStockMovements(
+          items.map((item) => ({
+            medicationId: item.medicationId,
+            type: "purchase" as const,
+            quantity: item.quantity,
+            referenceId: Number(purchaseId),
+            referenceType: "purchase" as const,
+          })),
+          tx
+        );
+
       }
-      
+
       // If status is being changed from "Confirmed" to "Cancelled", reverse stock quantities
       if (status === 'Cancelled' && currentStatus === 'Confirmed') {
         // Get purchase items to reverse stock
@@ -323,8 +341,23 @@ export async function PUT(request: NextRequest) {
             })
             .where(eq(stock.medicationId, item.medicationId));
         }
-        
+
+
         console.log(`Stock reversed for ${items.length} items in purchase ${purchaseId}`);
+
+        // Record stock movements (reversing the purchase)
+        await recordBulkStockMovements(
+          items.map((item) => ({
+            medicationId: item.medicationId,
+            type: "return" as const,
+            quantity: -item.quantity,
+            referenceId: Number(purchaseId),
+            referenceType: "purchase" as const,
+            reason: "Purchase cancelled",
+          })),
+          tx
+        );
+
       }
 
       return updatedPurchase[0];

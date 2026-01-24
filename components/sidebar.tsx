@@ -2,16 +2,18 @@
 
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { 
-  LayoutGrid, 
-  ShoppingCart, 
-  Package, 
-  Warehouse, 
-  FileText, 
-  AlertCircle, 
-  BarChart2, 
-  Settings 
+import {
+  LayoutGrid,
+  ShoppingCart,
+  Package,
+  Warehouse,
+  FileText,
+  AlertCircle,
+  BarChart2,
+  Settings,
+  History
 } from "lucide-react";
+
 import { cn } from "@/lib/utils";
 
 interface SidebarProps {
@@ -23,12 +25,13 @@ interface SidebarProps {
 
 // Define which roles can access which modules
 const rolePermissions: Record<string, string[]> = {
-  admin: ["dashboard", "sales", "purchases", "stock", "inventory", "losses", "reports", "settings"],
-  manager: ["dashboard", "sales", "purchases", "stock", "inventory", "losses", "reports"],
-  pharmacist: ["dashboard", "sales", "stock", "inventory"],
+  admin: ["dashboard", "sales", "purchases", "stock", "movements", "inventory", "losses", "reports", "settings"],
+  manager: ["dashboard", "sales", "purchases", "stock", "movements", "inventory", "losses", "reports"],
+  pharmacist: ["dashboard", "sales", "stock", "movements", "inventory"],
   cashier: ["dashboard", "sales"],
-  inventory_manager: ["dashboard", "stock", "inventory", "purchases"],
+  inventory_manager: ["dashboard", "stock", "movements", "inventory", "purchases"],
 };
+
 
 export function Sidebar({ activeModule, collapsed, onToggleCollapse, userRole }: SidebarProps) {
   const router = useRouter();
@@ -38,7 +41,9 @@ export function Sidebar({ activeModule, collapsed, onToggleCollapse, userRole }:
     { id: "sales", label: "Sales", icon: ShoppingCart, path: "/sales" },
     { id: "purchases", label: "Purchases", icon: Package, path: "/purchases" },
     { id: "stock", label: "Stock", icon: Warehouse, path: "/stock" },
-    { id: "inventory", label: "Inventory", icon: FileText, path: "/inventory" },
+    { id: "movements", label: "Movements", icon: History, path: "/stock/movements" },
+    { id: "inventory", label: "Inventory", icon: FileText, path: "/inventories" },
+
     { id: "losses", label: "Losses", icon: AlertCircle, path: "/losses" },
     { id: "reports", label: "Reports", icon: BarChart2, path: "/reports" },
     { id: "settings", label: "Settings", icon: Settings, path: "/settings" },

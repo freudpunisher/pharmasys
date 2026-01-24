@@ -2,6 +2,8 @@ import { type NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { sales, saleItems, medications, users, stock } from "@/lib/db/schema";
 import { eq, gte, lte, and, sql } from "drizzle-orm";
+import { recordBulkStockMovements } from "@/lib/services/stock-service";
+
 
 export async function GET(request: NextRequest) {
   try {
@@ -107,22 +109,22 @@ export async function POST(request: NextRequest) {
       // Validate stock for all items
       for (const item of items) {
         const medicationWithStock = await tx
-          .select({ 
-            id: medications.id, 
+          .select({
+            id: medications.id,
             name: medications.name,
             currentQuantity: stock.currentQuantity,
-            reservedQuantity: stock.reservedQuantity 
+            reservedQuantity: stock.reservedQuantity
           })
           .from(medications)
           .leftJoin(stock, eq(medications.id, stock.medicationId))
           .where(eq(medications.id, Number(item.medicationId)))
           .limit(1);
-        
+
         if (!medicationWithStock[0]) {
           console.error("Medication not found:", item.medicationId);
           throw new Error(`Medication with ID ${item.medicationId} not found`);
         }
-        
+
         const availableQuantity = (medicationWithStock[0].currentQuantity || 0) - (medicationWithStock[0].reservedQuantity || 0);
         if (availableQuantity < Number(item.quantity)) {
           console.error("Insufficient stock:", {
@@ -166,6 +168,19 @@ export async function POST(request: NextRequest) {
           })
           .where(eq(stock.medicationId, Number(item.medicationId)));
       }
+
+      // Record stock movements
+      await recordBulkStockMovements(
+        items.map((item: any) => ({
+          medicationId: Number(item.medicationId),
+          type: "sale" as const,
+          quantity: -Number(item.quantity),
+          referenceId: newSale[0].id,
+          referenceType: "sale" as const,
+        })),
+        tx
+      );
+
 
       return newSale[0];
     });

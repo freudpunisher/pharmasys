@@ -2,6 +2,8 @@ import { type NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { losses, medications, users, stock } from "@/lib/db/schema";
 import { eq, gte, lte, and, sql, desc } from "drizzle-orm";
+import { recordStockMovement } from "@/lib/services/stock-service";
+
 
 export async function GET(request: NextRequest) {
   try {
@@ -15,7 +17,8 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get("limit") || "10");
     const offset = (page - 1) * limit;
 
-    let query = db
+    let query: any = db
+
       .select({
         id: losses.id,
         quantity: losses.quantity,
@@ -44,8 +47,9 @@ export async function GET(request: NextRequest) {
       query = query.where(and(...conditions));
     }
 
-    let countQuery = db
+    let countQuery: any = db
       .select({ count: sql<number>`count(*)`.as("count") })
+
       .from(losses);
 
     if (conditions.length > 0) {
@@ -176,6 +180,17 @@ export async function POST(request: NextRequest) {
           lastUpdated: new Date(),
         })
         .where(eq(stock.medicationId, Number(medicationId)));
+
+      // Record stock movement
+      await recordStockMovement({
+        medicationId: Number(medicationId),
+        type: "loss" as const,
+        quantity: -Number(quantity),
+        referenceId: newLoss[0].id,
+        referenceType: "loss" as const,
+        reason: reason,
+      }, tx);
+
 
       return newLoss[0];
     });

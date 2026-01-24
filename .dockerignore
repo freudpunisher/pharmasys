@@ -1,0 +1,17 @@
+node_modules
+.next
+out
+build
+.git
+.gitignore
+.env
+.env.local
+.env.production
+.dockerignore
+Dockerfile
+README.md
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.agent
+brain

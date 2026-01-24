@@ -140,6 +140,19 @@ export const losses = pgTable("losses", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 })
 
+// Stock Movements table
+export const stockMovements = pgTable("stock_movements", {
+  id: serial("id").primaryKey(),
+  medicationId: integer("medication_id").notNull().references(() => medications.id),
+  type: varchar("type", { length: 20 }).notNull(), // 'sale', 'purchase', 'adjustment', 'loss', 'return'
+  quantity: integer("quantity").notNull(), // positive for additions, negative for subtractions
+  referenceId: integer("reference_id"), // ID of the sale, purchase, etc.
+  referenceType: varchar("reference_type", { length: 50 }), // 'sale', 'purchase', 'inventory', 'loss'
+  reason: text("reason"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+})
+
+
 // Relations
 export const usersRelations = relations(users, ({ many }) => ({
   sales: many(sales),
@@ -176,6 +189,7 @@ export const medicationsRelations = relations(medications, ({ one, many }) => ({
   saleItems: many(saleItems),
   inventoryItems: many(inventoryItems),
   losses: many(losses),
+  stockMovements: many(stockMovements),
 }))
 
 export const stockRelations = relations(stock, ({ one }) => ({
@@ -252,3 +266,11 @@ export const lossesRelations = relations(losses, ({ one }) => ({
     references: [users.id],
   }),
 }))
+
+export const stockMovementsRelations = relations(stockMovements, ({ one }) => ({
+  medication: one(medications, {
+    fields: [stockMovements.medicationId],
+    references: [medications.id],
+  }),
+}))
+

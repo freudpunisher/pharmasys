@@ -2,6 +2,8 @@ import { type NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { inventories, inventoryItems, users, medications, stock } from "@/lib/db/schema";
 import { eq, sql, desc, and, gte, lte } from "drizzle-orm";
+import { recordBulkStockMovements } from "@/lib/services/stock-service";
+
 
 export async function GET(request: NextRequest) {
   try {
@@ -14,7 +16,8 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get("limit") || "10");
     const offset = (page - 1) * limit;
 
-    let query = db
+    let query: any = db
+
       .select({
         id: inventories.id,
         status: inventories.status,
@@ -48,8 +51,9 @@ export async function GET(request: NextRequest) {
     }
 
     // Fix count query with alias
-    let countQuery = db
+    let countQuery: any = db
       .select({ count: sql<number>`count(*)`.as('count') })
+
       .from(inventories);
 
     if (conditions.length > 0) {
@@ -205,6 +209,23 @@ export async function POST(request: NextRequest) {
           .set({ currentQuantity: Number(item.countedQuantity), lastUpdated: new Date() })
           .where(eq(stock.medicationId, Number(item.medicationId)));
       }
+
+      // Record stock movements for adjustments
+      const adjustments = items
+        .filter((item: any) => Number(item.countedQuantity) - Number(item.expectedQuantity) !== 0)
+        .map((item: any) => ({
+          medicationId: Number(item.medicationId),
+          type: "adjustment" as const,
+          quantity: Number(item.countedQuantity) - Number(item.expectedQuantity),
+          referenceId: newInventory[0].id,
+          referenceType: "inventory" as const,
+          reason: "Inventory adjustment",
+        }));
+
+      if (adjustments.length > 0) {
+        await recordBulkStockMovements(adjustments, tx);
+      }
+
 
       return {
         ...newInventory[0],
